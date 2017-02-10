@@ -1,5 +1,5 @@
 {
-  "name": "voxel-view",
+  "name": "voxel-view-cc",
   "version": "0.0.7",
   "description": "a default camera & renderer for voxeljs",
   "main": "index.js",

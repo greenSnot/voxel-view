@@ -1,17 +1,19 @@
 var THREE, temporaryPosition, temporaryVector
 
-module.exports = function(three, opts) {
+module.exports = function(three, opts, game) {
   temporaryPosition = new three.Vector3
   temporaryVector = new three.Vector3
   
-  return new View(three, opts)
+  return new View(three, opts, game)
 }
 
-function View(three, opts) {
+function View(three, opts, game) {
+  this.game = game
   THREE = three // three.js doesn't support multiple instances on a single page
   this.fov = opts.fov || 60
   this.width = opts.width || 512
   this.height = opts.height || 512
+  this.vr_mode = opts.vr_mode
   this.aspectRatio = opts.aspectRatio || this.width/this.height
   this.nearPlane = opts.nearPlane || 1
   this.farPlane = opts.farPlane || 10000
@@ -20,16 +22,23 @@ function View(three, opts) {
   this.camera = this.ortho?(new THREE.OrthographicCamera(this.width/-2, this.width/2, this.height/2, this.height/-2, this.nearPlane, this.farPlane)):(new THREE.PerspectiveCamera(this.fov, this.aspectRatio, this.nearPlane, this.farPlane))
   this.camera.lookAt(new THREE.Vector3(0, 0, 0))
 
+  this.camera_vr_left = this.ortho?(new THREE.OrthographicCamera(this.width/-2, this.width/2, this.height/2, this.height/-2, this.nearPlane, this.farPlane)):(new THREE.PerspectiveCamera(this.fov, this.aspectRatio, this.nearPlane, this.farPlane));
+  this.camera_vr_left.eulerOrder = 'YXZ';
+  this.camera_vr_right = this.ortho?(new THREE.OrthographicCamera(this.width/-2, this.width/2, this.height/2, this.height/-2, this.nearPlane, this.farPlane)):(new THREE.PerspectiveCamera(this.fov, this.aspectRatio, this.nearPlane, this.farPlane));
+  this.camera_vr_right.eulerOrder = 'YXZ';
+
+  this.vr_offset = opts.vr_offset;
+
   if (!process.browser) return
 
-  this.createRenderer(opts)
+  this.createRenderer()
   this.element = this.renderer.domElement
 }
 
-View.prototype.createRenderer = function(opts) {
-  opts = opts || {}
-  opts.antialias = opts.antialias || true
-  this.renderer = new THREE.WebGLRenderer(opts)
+View.prototype.createRenderer = function() {
+  this.renderer = new THREE.WebGLRenderer({
+    antialias: true
+  })
   this.renderer.setSize(this.width, this.height)
   this.renderer.setClearColorHex(this.skyColor, 1.0)
   this.renderer.clear()
@@ -52,7 +61,7 @@ View.prototype.cameraPosition = function() {
 View.prototype.cameraVector = function() {
   temporaryVector.multiplyScalar(0)
   temporaryVector.z = -1
-  temporaryVector.transformDirection( this.camera.matrixWorld )
+  this.camera.matrixWorld.rotateAxis(temporaryVector)
   return [temporaryVector.x, temporaryVector.y, temporaryVector.z]
 }
 
@@ -72,7 +81,36 @@ View.prototype.resizeWindow = function(width, height) {
 }
 
 View.prototype.render = function(scene) {
-  this.renderer.render(scene, this.camera)
+  if (this.vr_mode) {
+    this.renderer.enableScissorTest(true);
+
+    var left = this.width * 0.5;
+    var bottom = 0;
+    var width = this.width * 0.5;
+    var height = this.height;
+
+    this.renderer.setViewport(left, bottom, width, height)
+    this.renderer.setScissor(left, bottom, width, height)
+    this.camera_vr_right.rotation.copy(this.camera.rotation)
+    this.camera_vr_right.rotation.y = this.game.controls._yaw_target.rotation.y
+    this.camera_vr_right.position.copy(this.camera.localToWorld(new THREE.Vector3(this.vr_offset, 0, 0)))
+    this.camera_vr_right.aspect = width / height
+    this.camera_vr_right.updateProjectionMatrix()
+    this.renderer.render(scene, this.camera_vr_right)
+
+    left = 0;
+    this.renderer.setViewport(left, bottom, width, height)
+    this.renderer.setScissor(left, bottom, width, height)
+    this.camera_vr_left.rotation.copy(this.camera.rotation)
+    this.camera_vr_left.rotation.y = this.game.controls._yaw_target.rotation.y
+    this.camera_vr_left.position.copy(this.camera.localToWorld(new THREE.Vector3(- this.vr_offset, 0, 0)))
+    this.camera_vr_left.aspect = width / height
+    this.camera_vr_left.updateProjectionMatrix()
+    this.renderer.render(scene, this.camera_vr_left)
+
+  } else {
+    this.renderer.render(scene, this.camera)
+  }
 }
 
 View.prototype.appendTo = function(element) {
